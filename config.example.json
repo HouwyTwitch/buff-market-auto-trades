@@ -1,0 +1,34 @@
+{
+    "_comment": "Copy this file to config.json and fill in your credentials.",
+
+    "_comment_buff": "Optional: paste an existing Buff.market session cookie here to skip re-login on startup. Leave blank to auto-login via Steam OpenID every time.",
+    "buff_session": "",
+
+    "_comment_steam": "Your Steam account credentials and mobile authenticator secrets (from the .maFile exported by Steam Desktop Authenticator or similar).",
+    "steam_id64":      76561198000000000,
+    "steam_login":     "your_steam_username",
+    "steam_password":  "your_steam_password",
+    "shared_secret":   "BASE64_SHARED_SECRET_FROM_MAFILE",
+    "identity_secret": "BASE64_IDENTITY_SECRET_FROM_MAFILE",
+
+    "_comment_optional": "Everything below is optional.",
+
+    "_comment_game": "Game to monitor: csgo, dota2, tf2, rust",
+    "game": "csgo",
+
+    "steam_api_key": "",
+
+    "_comment_proxy": "SOCKS5 proxy for Buff HTTP requests. Set steam_use_proxy=true to also route Steam through it.",
+    "client_proxy":   "",
+    "steam_use_proxy": false,
+
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+
+    "_comment_polling": "Polling intervals in seconds. Lower values = faster response but more API load.",
+    "notif_interval_seconds":     15,
+    "heartbeat_interval_seconds": 60,
+    "post_run_delay_seconds":      5,
+
+    "_comment_session": "How often (seconds) to verify session validity. Regular API activity keeps the session alive implicitly; auth errors trigger immediate reauth. Default 864000 = 10 days.",
+    "session_keepalive_seconds": 864000
+}
