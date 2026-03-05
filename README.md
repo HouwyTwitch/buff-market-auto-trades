@@ -1,4 +1,4 @@
-# buff-market-auto-sales
+# buff-market-auto-trades
 
 Automatically delivers sold items on [Buff.market](https://buff.market) (CS2 / P2P).
 
