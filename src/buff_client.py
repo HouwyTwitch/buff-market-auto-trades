@@ -325,7 +325,7 @@ class BuffClient:
                     code = str(payload.get("code", ""))
                     if code not in ("OK", ""):
                         # Auto-reauth on known auth error codes
-                        if code.lower() in self._AUTH_ERROR_CODES and not _reauth_done:
+                        if code.lower().replace(" ", "_") in self._AUTH_ERROR_CODES and not _reauth_done:
                             log.warning("Auth error '%s' on %s — re-authenticating…", code, label or url)
                             if await self._reauth():
                                 return await self._request(
