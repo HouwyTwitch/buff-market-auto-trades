@@ -262,7 +262,8 @@ class BuffClient:
             ) as resp:
                 payload = await resp.json(content_type=None)
                 data = payload.get("data", payload) if isinstance(payload, dict) else {}
-                return isinstance(data, dict) and data.get("state") == "Logged"
+                state = data.get("state") if isinstance(data, dict) else None
+                return state in ("Logged", 2)
         except Exception as exc:
             log.debug("Direct session verification failed: %s", exc)
             return False
@@ -276,7 +277,7 @@ class BuffClient:
         try:
             data = await self._request("GET", URL_LOGIN_STATUS, label="check_session")
             state = data.get("state", "") if isinstance(data, dict) else ""
-            if state == "Logged":
+            if state in ("Logged", 2):
                 self._session_valid = True
                 return True
             log.warning("Buff.market session state: %r (not logged in)", state)
