@@ -370,6 +370,13 @@ class BuffClient:
         log.info("Logging into Buff.market via Steam OpenID…")
         self._steam_session = steam_session
 
+        # Snapshot the existing cookie so we can detect a stale-cookie false-positive.
+        # If do_session_steam_auth completes but buff.market never issues a new
+        # session (e.g. the verification redirect failed silently), the cookie jar
+        # still contains the old, already-expired value — and the login would
+        # appear successful while every subsequent request would return "Login Required".
+        old_session = get_cookie_value_from_session(steam_session, _BASE, "session") or ""
+
         try:
             await do_session_steam_auth(steam_session, URL_LOGIN_STEAM)
         except Exception as exc:
@@ -381,11 +388,48 @@ class BuffClient:
             log.error("Buff.market 'session' cookie not found after Steam OpenID login.")
             return False
 
+        if session_val == old_session:
+            log.error(
+                "Buff.market 'session' cookie unchanged after Steam OpenID login — "
+                "the verification redirect may not have set a new session. "
+                "Treating login as failed to prevent an infinite re-auth loop."
+            )
+            return False
+
         self._cookie = session_val
         self._session_valid = True
 
+        # Verify the freshly-issued session actually works before declaring success.
+        if not await self._verify_session_direct():
+            log.error(
+                "Buff.market session check failed immediately after Steam OpenID login — "
+                "the new session cookie is invalid."
+            )
+            self._session_valid = False
+            return False
+
         log.info("Buff.market Steam OpenID login successful.")
         return True
+
+    async def _verify_session_direct(self) -> bool:
+        """
+        Verify the current session cookie is accepted by Buff.market.
+
+        Unlike ``check_session()``, this method makes a raw request that bypasses
+        ``_request()``'s reauth logic, preventing infinite recursion when called
+        from within the login flow.
+        """
+        try:
+            async with self._session.request(
+                "GET", URL_LOGIN_STATUS,
+                headers=self._base_headers(),
+            ) as resp:
+                payload = await resp.json(content_type=None)
+                data = payload.get("data", payload) if isinstance(payload, dict) else {}
+                return isinstance(data, dict) and data.get("state") == "Logged"
+        except Exception as exc:
+            log.debug("Direct session verification request failed: %s", exc)
+            return False
 
     async def check_session(self) -> bool:
         """Verify the Buff.market session is active."""
