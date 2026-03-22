@@ -376,14 +376,27 @@ class BuffClient:
         # still contains the old, already-expired value — and the login would
         # appear successful while every subsequent request would return "Login Required".
         old_session = get_cookie_value_from_session(steam_session, _BASE, "session") or ""
+        log.debug("DEBUG [login_with_steam] old buff 'session' cookie: %r", old_session[:20] + "…" if old_session else "<none>")
+
+        # Log all cookies currently in the steam_session jar before the flow
+        log.debug("DEBUG [login_with_steam] steam_session cookies before do_session_steam_auth:")
+        for cookie in steam_session.cookie_jar:
+            log.debug("  domain=%r  name=%r  value=%r", cookie.get("domain"), cookie.key, str(cookie.value)[:40])
 
         try:
             await do_session_steam_auth(steam_session, URL_LOGIN_STEAM)
         except Exception as exc:
-            log.error("Steam OpenID flow failed: %s", exc)
+            log.error("Steam OpenID flow failed: %s", exc, exc_info=True)
             return False
 
+        # Log all cookies after the flow so we can see what buff.market set
+        log.debug("DEBUG [login_with_steam] steam_session cookies after do_session_steam_auth:")
+        for cookie in steam_session.cookie_jar:
+            log.debug("  domain=%r  name=%r  value=%r", cookie.get("domain"), cookie.key, str(cookie.value)[:40])
+
         session_val = get_cookie_value_from_session(steam_session, _BASE, "session")
+        log.debug("DEBUG [login_with_steam] new buff 'session' cookie: %r", session_val[:20] + "…" if session_val else "<none>")
+
         if not session_val:
             log.error("Buff.market 'session' cookie not found after Steam OpenID login.")
             return False
@@ -420,15 +433,27 @@ class BuffClient:
         from within the login flow.
         """
         try:
+            headers = self._base_headers()
+            log.debug("DEBUG [_verify_session_direct] GET %s", URL_LOGIN_STATUS)
+            log.debug("DEBUG [_verify_session_direct] request headers: %s", dict(headers))
             async with self._session.request(
                 "GET", URL_LOGIN_STATUS,
-                headers=self._base_headers(),
+                headers=headers,
             ) as resp:
-                payload = await resp.json(content_type=None)
+                log.debug("DEBUG [_verify_session_direct] response status: %s", resp.status)
+                log.debug("DEBUG [_verify_session_direct] response headers: %s", dict(resp.headers))
+                raw = await resp.text()
+                log.debug("DEBUG [_verify_session_direct] response body: %s", raw[:2000])
+                try:
+                    payload = __import__("json").loads(raw)
+                except Exception:
+                    payload = {}
                 data = payload.get("data", payload) if isinstance(payload, dict) else {}
-                return isinstance(data, dict) and data.get("state") == "Logged"
+                state = data.get("state") if isinstance(data, dict) else None
+                log.debug("DEBUG [_verify_session_direct] parsed state=%r", state)
+                return state == "Logged"
         except Exception as exc:
-            log.debug("Direct session verification request failed: %s", exc)
+            log.debug("Direct session verification request failed: %s", exc, exc_info=True)
             return False
 
     async def check_session(self) -> bool:
