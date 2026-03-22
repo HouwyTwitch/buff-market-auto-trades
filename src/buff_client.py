@@ -263,7 +263,14 @@ class BuffClient:
                 break
 
     # Auth error codes Buff.market returns when the session has expired.
-    _AUTH_ERROR_CODES = frozenset({"login_required", "auth_required", "not_login"})
+    # Lowercased auth error codes as buff.market actually returns them.
+    # Web API returns spaced forms ("login required"), mobile/API returns underscored
+    # forms ("login_required") — include both so neither path is missed.
+    _AUTH_ERROR_CODES = frozenset({
+        "login required", "login_required",
+        "auth required",  "auth_required",
+        "not_login",
+    })
 
     async def _request(
         self,
@@ -325,7 +332,7 @@ class BuffClient:
                     code = str(payload.get("code", ""))
                     if code not in ("OK", ""):
                         # Auto-reauth on known auth error codes
-                        if code.lower().replace(" ", "_") in self._AUTH_ERROR_CODES and not _reauth_done:
+                        if code.lower() in self._AUTH_ERROR_CODES and not _reauth_done:
                             log.warning("Auth error '%s' on %s — re-authenticating…", code, label or url)
                             if await self._reauth():
                                 return await self._request(
