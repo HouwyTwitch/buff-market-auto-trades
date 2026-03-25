@@ -101,6 +101,11 @@ class SteamTrader:
             except Exception as exc:
                 log.error("Keep-alive error: %s", exc)
 
+    async def relogin(self) -> None:
+        """Re-authenticate the Steam session (e.g. after session expiry)."""
+        await _retry(self._client.login, label="steam_relogin")
+        log.info("Steam session restored for %s", self._steam_id)
+
     async def get_pending_confirmation_ids(self) -> set[int]:
         """Return the set of creator_ids (trade offer IDs) for all pending confirmations."""
         try:

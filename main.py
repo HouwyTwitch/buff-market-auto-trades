@@ -122,6 +122,10 @@ async def _main(args: argparse.Namespace) -> None:
         )
 
         async with steam_trader as steam:
+            # Allow buff_client to re-login to Steam automatically when the
+            # Steam session expires during a Buff.market re-auth attempt.
+            buff_client._steam_relogin_fn = steam.relogin
+
             # --- Buff.market login ---
             # If a session cookie is present in config, verify it is still valid.
             # Otherwise (or if it has expired) perform a full Steam OpenID login.

@@ -241,6 +241,7 @@ class BuffClient:
         self._csrf: str | None = None
         self._session_valid: bool = bool(session_cookie)
         self._steam_session: aiohttp.ClientSession | None = None
+        self._steam_relogin_fn: Any = None  # async () -> None; set after Steam login
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -492,10 +493,24 @@ class BuffClient:
         if self._steam_session is not None:
             log.warning("Refresh failed — re-logging in via Steam OpenID…")
             ok = await self.login_with_steam(self._steam_session)
+            if not ok and self._steam_relogin_fn is not None:
+                # The OpenID flow failed — most likely the Steam session itself
+                # has expired.  Re-authenticate with Steam first, then retry.
+                log.warning(
+                    "Steam OpenID login failed — re-authenticating with Steam…"
+                )
+                try:
+                    await self._steam_relogin_fn()
+                    log.info(
+                        "Steam re-authentication succeeded — retrying Buff.market login…"
+                    )
+                    ok = await self.login_with_steam(self._steam_session)
+                except Exception as exc:
+                    log.error("Steam re-authentication failed: %s", exc)
             if not ok:
                 log.error(
-                    "Buff.market re-login failed. The Steam session may also "
-                    "have expired. Restart the bot to re-authenticate."
+                    "Buff.market re-login failed after Steam re-authentication. "
+                    "Check your Steam credentials or restart if the problem persists."
                 )
             return ok
         return False
