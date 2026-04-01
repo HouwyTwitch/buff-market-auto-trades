@@ -35,10 +35,12 @@ import base64
 import json
 import logging
 import os
+from html.parser import HTMLParser
 from typing import Any
 
 import aiohttp
-from aiosteampy.utils import do_session_steam_auth, get_cookie_value_from_session
+from aiohttp import MultipartWriter
+from aiosteampy.utils import get_cookie_value_from_session
 from cryptography.hazmat.primitives.asymmetric.padding import PKCS1v15
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
@@ -116,6 +118,80 @@ _WEBVIEW_STATIC_COOKIES: tuple[tuple[str, str, str], ...] = (
     ("steamcommunity.com", "timezoneOffset",          "0,0"),
     ("steamcommunity.com", "strResponsiveViewPrefs",  "touch"),
 )
+
+
+def _extract_openid_payload(page_text: str) -> dict[str, str]:
+    """
+    Extract the Steam OpenID form fields from a page.
+
+    Replaces ``aiosteampy.utils.extract_openid_payload`` which uses a
+    character-class regex ``[\\w=\\"\\s]+`` that breaks whenever Steam adds
+    hyphenated attributes (e.g. ``autocomplete="off"``, ``data-*``) between
+    the identifying attribute and ``value=``.  This implementation uses
+    ``html.parser`` so it is insensitive to attribute order or content.
+    """
+
+    class _InputCollector(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fields: dict[str, str] = {}
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag != "input":
+                return
+            d = {k: (v or "") for k, v in attrs}
+            name  = d.get("name", "")
+            value = d.get("value", "")
+            id_   = d.get("id", "")
+
+            if id_ == "actionInput" or name == "action":
+                self.fields["action"] = value
+            elif name in ("openid.mode", "openidparams", "nonce"):
+                self.fields[name] = value
+
+    collector = _InputCollector()
+    collector.feed(page_text)
+    fields = collector.fields
+
+    missing = [k for k in ("action", "openid.mode", "openidparams", "nonce") if k not in fields]
+    if missing:
+        # Log a snippet to help diagnose future Steam page changes.
+        snippet = page_text[:2000].replace("\n", " ")
+        raise ValueError(
+            f"Steam OpenID page missing fields {missing}. "
+            f"Page snippet: {snippet!r}"
+        )
+
+    return fields
+
+
+async def _do_session_steam_auth(
+    session: aiohttp.ClientSession,
+    auth_url: str,
+) -> aiohttp.ClientResponse:
+    """
+    Replacement for ``aiosteampy.utils.do_session_steam_auth``.
+
+    Fetches *auth_url* (which redirects to Steam's OpenID confirmation page),
+    parses the hidden form fields with :func:`_extract_openid_payload`, and
+    POSTs them to ``steamcommunity.com/openid/login`` so the caller's session
+    receives the Buff.market session cookie on the follow-through redirect.
+    """
+    r = await session.get(auth_url, allow_redirects=True)
+    page_text = await r.text()
+
+    data = _extract_openid_payload(page_text)
+
+    mpwriter = MultipartWriter("form-data")
+    for field, field_value in data.items():
+        part = mpwriter.append(field_value)
+        part.set_content_disposition("form-data", name=field)
+
+    return await session.post(
+        "https://steamcommunity.com/openid/login",
+        data=mpwriter,
+        allow_redirects=True,
+    )
 
 
 def build_seller_info(steam_session: aiohttp.ClientSession) -> str:
@@ -384,7 +460,7 @@ class BuffClient:
             log.debug("  domain=%r  name=%r  value=%r", cookie.get("domain"), cookie.key, str(cookie.value)[:40])
 
         try:
-            await do_session_steam_auth(steam_session, URL_LOGIN_STEAM)
+            await _do_session_steam_auth(steam_session, URL_LOGIN_STEAM)
         except Exception as exc:
             log.error("Steam OpenID flow failed: %s", exc, exc_info=True)
             return False
