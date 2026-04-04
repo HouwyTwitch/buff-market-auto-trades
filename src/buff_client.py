@@ -317,6 +317,9 @@ class BuffClient:
         self._csrf: str | None = None
         self._session_valid: bool = bool(session_cookie)
         self._steam_session: aiohttp.ClientSession | None = None
+        # Optional async callable that re-authenticates the Steam session before
+        # the Buff OpenID flow runs.  Set via set_steam_relogin_fn() in main.py.
+        self._steam_relogin_fn: Any = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -560,6 +563,10 @@ class BuffClient:
             self._session_valid = False
             return False
 
+    def set_steam_relogin_fn(self, fn: Any) -> None:
+        """Register an async callable that refreshes the Steam session before re-auth."""
+        self._steam_relogin_fn = fn
+
     async def _reauth(self) -> bool:
         """Try refresh_session first; fall back to full Steam re-login."""
         log.warning("Buff.market session invalid — attempting refresh…")
@@ -567,6 +574,15 @@ class BuffClient:
             return True
         if self._steam_session is not None:
             log.warning("Refresh failed — re-logging in via Steam OpenID…")
+            # Re-authenticate the Steam session first, mirroring the startup
+            # login sequence.  Without this, the OpenID flow reuses a potentially
+            # stale Steam session and buff.market never issues a new cookie.
+            if self._steam_relogin_fn is not None:
+                try:
+                    log.info("Re-authenticating Steam session before Buff OpenID flow…")
+                    await self._steam_relogin_fn()
+                except Exception as exc:
+                    log.error("Steam re-login failed: %s", exc, exc_info=True)
             ok = await self.login_with_steam(self._steam_session)
             if not ok:
                 log.error(

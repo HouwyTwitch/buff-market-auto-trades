@@ -85,6 +85,12 @@ class SteamTrader:
         await _retry(self._client.login, label="steam_login")
         log.info("Logged in to Steam as %s", self._steam_id)
 
+    async def relogin(self) -> None:
+        """Re-authenticate with Steam (e.g. after session expiry)."""
+        log.info("Re-authenticating with Steam as %s…", self._steam_id)
+        await _retry(self._client.login, label="steam_relogin")
+        log.info("Steam re-login successful for %s", self._steam_id)
+
     async def _keepalive_loop(self) -> None:
         while True:
             await asyncio.sleep(_KEEPALIVE_INTERVAL)
