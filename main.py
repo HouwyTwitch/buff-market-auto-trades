@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import logging
 import logging.handlers
+import os
 import signal
 import sys
 from pathlib import Path
@@ -30,9 +31,11 @@ import aiohttp
 from aiohttp_socks.connector import ProxyConnector
 
 import src.config as cfg_module
-from src.buff_client import BuffClient
+from src.buff_client import AuthFatalError, BuffClient
 from src.processor import NotificationPoller, TradeProcessor
 from src.steam_trader import SteamTrader
+
+_RESTART_DELAY = 60  # seconds to wait before restarting after auth failure
 
 
 def _setup_logging(
@@ -204,6 +207,14 @@ async def _main(args: argparse.Namespace) -> None:
                 except (asyncio.CancelledError, Exception):
                     pass
 
+            # Check all completed tasks for AuthFatalError — trigger restart
+            for task in done:
+                if task is stop_task:
+                    continue
+                exc = task.exception()
+                if isinstance(exc, AuthFatalError):
+                    raise exc
+
             if poller_task in done and not stop.is_set():
                 exc = poller_task.exception()
                 if exc:
@@ -213,10 +224,26 @@ async def _main(args: argparse.Namespace) -> None:
     log.info("Buff.market auto-sale processor stopped.")
 
 
+def _restart_script() -> None:
+    """Replace the current process with a fresh invocation of the same script."""
+    log = logging.getLogger(__name__)
+    log.info(
+        "Restarting script in %d seconds to re-authenticate from scratch…",
+        _RESTART_DELAY,
+    )
+    import time
+    time.sleep(_RESTART_DELAY)
+    log.info("Restarting now: %s %s", sys.executable, " ".join(sys.argv))
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 def main() -> None:
     args = _parse_args()
     try:
         asyncio.run(_main(args))
+    except AuthFatalError as exc:
+        logging.getLogger(__name__).error("Fatal auth failure: %s", exc)
+        _restart_script()
     except KeyboardInterrupt:
         pass
 

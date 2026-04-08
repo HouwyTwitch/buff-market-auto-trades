@@ -273,6 +273,10 @@ class BuffAPIError(Exception):
         self.body   = body
 
 
+class AuthFatalError(Exception):
+    """Raised when session re-authentication fails and the script must restart."""
+
+
 # ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
@@ -568,7 +572,11 @@ class BuffClient:
         self._steam_relogin_fn = fn
 
     async def _reauth(self) -> bool:
-        """Try refresh_session first; fall back to full Steam re-login."""
+        """Try refresh_session first; fall back to full Steam re-login.
+
+        Raises ``AuthFatalError`` when all re-authentication attempts fail,
+        signalling to the caller that the script must restart.
+        """
         log.warning("Buff.market session invalid — attempting refresh…")
         if await self.refresh_session():
             return True
@@ -584,13 +592,13 @@ class BuffClient:
                 except Exception as exc:
                     log.error("Steam re-login failed: %s", exc, exc_info=True)
             ok = await self.login_with_steam(self._steam_session)
-            if not ok:
-                log.error(
-                    "Buff.market re-login failed. The Steam session may also "
-                    "have expired. Restart the bot to re-authenticate."
-                )
-            return ok
-        return False
+            if ok:
+                return True
+            log.error(
+                "Buff.market re-login failed. Restarting the script to re-authenticate…"
+            )
+            raise AuthFatalError("All re-authentication attempts failed — restarting script")
+        raise AuthFatalError("No Steam session available for re-authentication — restarting script")
 
     async def keepalive_loop(self, interval_seconds: float = 864000.0) -> None:
         """
