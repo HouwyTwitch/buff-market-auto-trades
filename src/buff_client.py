@@ -59,7 +59,6 @@ URL_SELL_TO_DELIVER  = f"{_BASE}/api/market/sell_order/to_deliver"              
 URL_SEND_OFFER       = f"{_BASE}/api/market/manual_plus/seller_send_offer"      # POST: submit
 URL_PREVIEW_OFFER    = f"{_BASE}/api/market/manual_plus/seller_send_offer/preview"  # GET: preview before POST
 URL_LOGIN_STATUS     = f"{_BASE}/account/api/login/status"
-URL_LOGIN_REFRESH    = f"{_BASE}/account/api/login/status/refresh"
 URL_LOGIN_STEAM      = f"{_BASE}/account/login/steam"
 
 # appid values per game slug
@@ -321,9 +320,6 @@ class BuffClient:
         self._csrf: str | None = None
         self._session_valid: bool = bool(session_cookie)
         self._steam_session: aiohttp.ClientSession | None = None
-        # Optional async callable that re-authenticates the Steam session before
-        # the Buff OpenID flow runs.  Set via set_steam_relogin_fn() in main.py.
-        self._steam_relogin_fn: Any = None
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -555,38 +551,18 @@ class BuffClient:
             self._session_valid = False
             return False
 
-    async def refresh_session(self) -> bool:
-        """Extend the Buff.market session lifetime without re-authentication."""
-        try:
-            await self._request("POST", URL_LOGIN_REFRESH, label="refresh_session")
-            log.debug("Buff.market session refreshed.")
-            self._session_valid = True
-            return True
-        except BuffAPIError as exc:
-            log.warning("Session refresh failed: %s", exc)
-            self._session_valid = False
-            return False
-
-    def set_steam_relogin_fn(self, fn: Any) -> None:
-        """Register an async callable that refreshes the Steam session before re-auth."""
-        self._steam_relogin_fn = fn
-
     async def _reauth(self) -> bool:
-        """Try a lightweight session refresh; restart the script if that fails.
+        """Trigger a full script restart to re-authenticate from scratch.
 
-        The in-place Steam OpenID re-login flow is unreliable (buff.market
-        often does not issue a new session cookie, and rapid retries trigger
-        Steam 429 rate limits).  A full script restart goes through the clean
-        startup login sequence which works reliably.
+        Buff.market session refresh does not work (returns "Method Not Allowed"),
+        and in-place Steam OpenID re-login is unreliable.  The only reliable
+        path is a full process restart that goes through the clean startup
+        login sequence.
 
-        Raises ``AuthFatalError`` when the session cannot be refreshed,
-        signalling to the caller that the script must restart.
+        Always raises ``AuthFatalError``.
         """
-        log.warning("Buff.market session invalid — attempting lightweight refresh…")
-        if await self.refresh_session():
-            return True
-        log.error("Session refresh failed — triggering full script restart for clean re-login…")
-        raise AuthFatalError("Session expired and refresh failed — restarting script for clean re-login")
+        log.error("Buff.market session expired — triggering full script restart…")
+        raise AuthFatalError("Session expired — restarting script for clean re-authentication")
 
     async def keepalive_loop(self, interval_seconds: float = 864000.0) -> None:
         """
@@ -595,7 +571,7 @@ class BuffClient:
         Every *interval_seconds* (default 10 days):
           - Calls ``check_session()`` to verify the session is still active.
           - If valid: does nothing (regular API activity keeps the session alive).
-          - If expired: tries ``refresh_session()``, then full Steam re-login.
+          - If expired: raises ``AuthFatalError`` to trigger a full script restart.
         """
         while True:
             await asyncio.sleep(interval_seconds)
