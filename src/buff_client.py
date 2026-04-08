@@ -572,33 +572,21 @@ class BuffClient:
         self._steam_relogin_fn = fn
 
     async def _reauth(self) -> bool:
-        """Try refresh_session first; fall back to full Steam re-login.
+        """Try a lightweight session refresh; restart the script if that fails.
 
-        Raises ``AuthFatalError`` when all re-authentication attempts fail,
+        The in-place Steam OpenID re-login flow is unreliable (buff.market
+        often does not issue a new session cookie, and rapid retries trigger
+        Steam 429 rate limits).  A full script restart goes through the clean
+        startup login sequence which works reliably.
+
+        Raises ``AuthFatalError`` when the session cannot be refreshed,
         signalling to the caller that the script must restart.
         """
-        log.warning("Buff.market session invalid — attempting refresh…")
+        log.warning("Buff.market session invalid — attempting lightweight refresh…")
         if await self.refresh_session():
             return True
-        if self._steam_session is not None:
-            log.warning("Refresh failed — re-logging in via Steam OpenID…")
-            # Re-authenticate the Steam session first, mirroring the startup
-            # login sequence.  Without this, the OpenID flow reuses a potentially
-            # stale Steam session and buff.market never issues a new cookie.
-            if self._steam_relogin_fn is not None:
-                try:
-                    log.info("Re-authenticating Steam session before Buff OpenID flow…")
-                    await self._steam_relogin_fn()
-                except Exception as exc:
-                    log.error("Steam re-login failed: %s", exc, exc_info=True)
-            ok = await self.login_with_steam(self._steam_session)
-            if ok:
-                return True
-            log.error(
-                "Buff.market re-login failed. Restarting the script to re-authenticate…"
-            )
-            raise AuthFatalError("All re-authentication attempts failed — restarting script")
-        raise AuthFatalError("No Steam session available for re-authentication — restarting script")
+        log.error("Session refresh failed — triggering full script restart for clean re-login…")
+        raise AuthFatalError("Session expired and refresh failed — restarting script for clean re-login")
 
     async def keepalive_loop(self, interval_seconds: float = 864000.0) -> None:
         """
