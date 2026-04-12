@@ -24,7 +24,7 @@ import asyncio
 import logging
 import time
 
-from .buff_client import BuffClient, build_seller_info
+from .buff_client import AuthFatalError, BuffClient, build_seller_info
 from .steam_trader import SteamTrader
 
 log = logging.getLogger(__name__)
@@ -101,6 +101,8 @@ class TradeProcessor:
         # 1. Fetch pending orders
         try:
             orders = await self._buff.get_pending_sell_orders()
+        except AuthFatalError:
+            raise
         except Exception as exc:
             log.error("Failed to fetch pending sell orders: %s", exc)
             return
@@ -239,6 +241,8 @@ class NotificationPoller:
                     triggered = True
                 else:
                     log.debug("Notification: no pending orders (count=0).")
+            except AuthFatalError:
+                raise
             except Exception as exc:
                 log.debug("Notification poll error (will rely on heartbeat): %s", exc)
 
@@ -252,6 +256,8 @@ class NotificationPoller:
                         triggered = True
                     else:
                         log.debug("Heartbeat: no pending orders.")
+                except AuthFatalError:
+                    raise
                 except Exception as exc:
                     log.warning("Heartbeat poll failed: %s", exc)
 
@@ -263,5 +269,7 @@ class NotificationPoller:
     async def _safe_run(self) -> None:
         try:
             await self._proc.run_once()
+        except AuthFatalError:
+            raise
         except Exception as exc:
             log.exception("Unexpected error in delivery cycle: %s", exc)
