@@ -24,6 +24,7 @@ import logging
 import logging.handlers
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -230,7 +231,8 @@ def _restart_script() -> None:
     import time
     time.sleep(_RESTART_DELAY)
     log.info("Restarting now: %s %s", sys.executable, " ".join(sys.argv))
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+    subprocess.Popen([sys.executable] + sys.argv)
+    sys.exit(0)
 
 
 def main() -> None:
