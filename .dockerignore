@@ -1,0 +1,17 @@
+# Secrets & runtime state — never bake these into the image
+config.json
+cookies.json
+*.log
+
+# VCS / project meta
+.git
+.gitignore
+README.md
+LICENSE
+
+# Python caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
