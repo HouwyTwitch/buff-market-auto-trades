@@ -1,0 +1,27 @@
+services:
+  buff-trades:
+    build: .
+    image: buff-market-auto-trades
+    container_name: buff-market-auto-trades
+
+    # Mount your filled-in config.json read-only. Copy config.example.json
+    # to config.json and fill in your credentials before running.
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - buff-data:/data
+
+    # The app exits (code 0) and re-execs itself to re-authenticate after a
+    # fatal auth failure. Inside a container, PID 1 exiting stops the container,
+    # so we let Docker handle the restart instead. `unless-stopped` restarts on
+    # any exit unless you explicitly `docker compose stop`.
+    restart: unless-stopped
+
+    # Forward Ctrl-C / `docker compose stop` to the app for a graceful shutdown
+    # (the app handles SIGINT/SIGTERM to stop after the current cycle).
+    stop_grace_period: 30s
+
+    # Override the default command to tweak logging, e.g.:
+    #   command: ["--config", "/app/config.json", "--cookies", "/data/cookies.json", "--log-level", "DEBUG"]
+
+volumes:
+  buff-data:

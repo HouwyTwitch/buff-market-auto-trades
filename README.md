@@ -27,27 +27,100 @@ When you sell an item, Buff.market holds the funds until you deliver. This bot w
 
 ## Setup
 
-### 1. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Get your Steam secrets
+### 1. Get your Steam secrets
 
 Export your Steam Mobile Authenticator `.maFile` using [Steam Desktop Authenticator](https://github.com/Jessecar96/SteamDesktopAuthenticator) or similar. You need:
 
 - `shared_secret` — generates 2FA login codes
 - `identity_secret` — confirms trade offers
 
-### 3. Configure
+### 2. Configure
 
 ```bash
 cp config.example.json config.json
 # Fill in your credentials
 ```
 
-### 4. Run
+### 3. Run
+
+Pick **one** of the two options below.
+
+---
+
+## Run with Docker Compose (recommended)
+
+The easiest way to run the bot — no Python or dependency setup needed, and it restarts automatically.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with the Compose plugin (`docker compose version` should work).
+
+### Steps
+
+1. Create your config (if you haven't already):
+
+   ```bash
+   cp config.example.json config.json
+   # edit config.json and fill in your credentials
+   ```
+
+   > ⚠️ `config.json` **must exist as a file** before you start. Compose bind-mounts it; if it's missing, Docker will create an empty *directory* in its place and the bot will fail to start.
+
+2. Build and start in the background:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Follow the logs:
+
+   ```bash
+   docker compose logs -f
+   ```
+
+4. Stop it:
+
+   ```bash
+   docker compose down
+   ```
+
+That's it. The container reads `config.json` (mounted read-only) and persists your logged-in Buff session to a named volume (`buff-data`) so it survives restarts and rebuilds.
+
+### What the Compose setup does
+
+- **Builds** the image from the included `Dockerfile` (Python 3.12 slim + the deps in `requirements.txt`).
+- **Mounts** `./config.json` → `/app/config.json` (read-only).
+- **Persists** Steam cookies to a `/data` named volume (`--cookies /data/cookies.json`) so you don't re-login on every restart.
+- **Auto-restarts** (`restart: unless-stopped`). The bot exits and re-authenticates from scratch after a fatal auth failure; Docker brings it right back up. To stop it for good, run `docker compose down` (or `docker compose stop`).
+- **Graceful shutdown** — `docker compose stop` sends `SIGTERM`, and the bot finishes its current cycle before exiting (30s grace period).
+
+### Customizing the Compose run
+
+Change logging or other CLI flags by uncommenting and editing the `command:` line in `docker-compose.yml`:
+
+```yaml
+    command: ["--config", "/app/config.json", "--cookies", "/data/cookies.json", "--log-level", "DEBUG"]
+```
+
+After changing config or flags, apply with:
+
+```bash
+docker compose up -d
+```
+
+(Add `--build` if you changed the code or `requirements.txt`.)
+
+---
+
+## Run with Python (local)
+
+### 1. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Run
 
 ```bash
 python main.py
@@ -97,4 +170,6 @@ src/
   config.py           Config loading and validation
 config.example.json   Config template
 requirements.txt      Python dependencies
+Dockerfile            Container image definition
+docker-compose.yml    One-command Docker deployment
 ```

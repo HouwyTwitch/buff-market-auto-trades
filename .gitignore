@@ -1,0 +1,11 @@
+# Secrets & runtime state — never commit these
+config.json
+cookies.json
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
